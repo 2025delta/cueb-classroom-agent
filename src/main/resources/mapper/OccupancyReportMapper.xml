@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cueb.demo.classroom.mapper.OccupancyReportMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO occupancy_report (classroom_id, is_occupied, reporter, people_count, duration)
+        VALUES (#{classroomId}, #{isOccupied}, #{reporter}, #{peopleCount}, #{duration})
+    </insert>
+
+    <select id="findLatestByClassroomId" resultType="OccupancyReport">
+        SELECT id, classroom_id, is_occupied, reporter, people_count, duration, create_time
+        FROM occupancy_report
+        WHERE classroom_id = #{classroomId}
+          AND DATE(create_time) = CURDATE()
+        ORDER BY create_time DESC
+        LIMIT 1
+    </select>
+
+    <select id="findLatestPerClassroom" resultType="OccupancyReport">
+        SELECT t.id, t.classroom_id, t.is_occupied, t.reporter, t.people_count, t.duration, t.create_time
+        FROM occupancy_report t
+        INNER JOIN (
+            SELECT classroom_id, MAX(create_time) AS max_time
+            FROM occupancy_report
+            WHERE DATE(create_time) = CURDATE()
+            GROUP BY classroom_id
+        ) latest ON t.classroom_id = latest.classroom_id AND t.create_time = latest.max_time
+    </select>
+
+    <select id="findActiveByClassroomId" resultType="OccupancyReport">
+        SELECT id, classroom_id, is_occupied, reporter, people_count, duration, create_time
+        FROM occupancy_report
+        WHERE classroom_id = #{classroomId}
+          AND DATE(create_time) = CURDATE()
+          AND create_time &lt;= NOW()
+          AND ADDTIME(create_time, duration) &gt;= NOW()
+        ORDER BY create_time DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insertBatch">
+        INSERT INTO occupancy_report (classroom_id, is_occupied, reporter, people_count, duration)
+        VALUES
+        <foreach collection="list" item="r" separator=",">
+            (#{r.classroomId}, #{r.isOccupied}, #{r.reporter}, #{r.peopleCount}, #{r.duration})
+        </foreach>
+    </insert>
+
+</mapper>
