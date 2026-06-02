@@ -11,7 +11,6 @@ public class CuebAgentDemoApplication {
 
     public static void main(String[] args) {
         Dotenv dotenv = Dotenv.configure()
-                .filename(".env.develop")
                 .ignoreIfMissing()
                 .load();
         dotenv.entries().forEach(e ->
