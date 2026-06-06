@@ -10,6 +10,7 @@ import com.cueb.demo.classroom.util.PeriodUtil;
 import com.cueb.demo.classroom.vo.ClassroomStatusVO;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -77,28 +78,32 @@ public class ClassroomService {
             }
         }
 
-        // P2: 检查活跃占用窗口 — create_time + duration >= NOW()
-        OccupancyReport active = occupancyReportMapper.findActiveByClassroomId(c.getId());
-        if (active != null) {
-            vo.setStatus(active.getIsOccupied() == 1 ? "占用中" : "空闲");
-            vo.setReportedBy(active.getReporter());
-            vo.setPeopleCount(active.getPeopleCount());
-            vo.setDuration(active.getDuration());
-            vo.setReportCreateTime(active.getCreateTime());
-            return vo;
-        }
-
-        // P3: 无活跃窗口 → 回退到最新上报记录
+        // P2: 取今天最新一条上报记录
+        //     空闲记录永久有效，占用记录按时间窗口判断
         OccupancyReport latest = occupancyReportMapper.findLatestByClassroomId(c.getId());
         if (latest != null) {
-            vo.setStatus(latest.getIsOccupied() == 1 ? "占用中" : "空闲");
+            if (latest.getIsOccupied() == 0) {
+                // 空闲记录不受时长约束，直接以该记录为准
+                vo.setStatus("空闲");
+            } else {
+                // 占用记录：检查是否仍在有效时长内
+                LocalDateTime expiry = latest.getCreateTime()
+                        .plusSeconds(latest.getDuration().toSecondOfDay());
+                if (expiry.isBefore(LocalDateTime.now())) {
+                    vo.setStatus("空闲");   // 已过期，自动恢复为空闲
+                } else {
+                    vo.setStatus("占用中"); // 未过期，仍为占用中
+                }
+            }
             vo.setReportedBy(latest.getReporter());
             vo.setPeopleCount(latest.getPeopleCount());
             vo.setDuration(latest.getDuration());
             vo.setReportCreateTime(latest.getCreateTime());
-        } else {
-            vo.setStatus("空闲");
+            return vo;
         }
+
+        // P3: 无任何上报记录 → 默认空闲
+        vo.setStatus("空闲");
         return vo;
     }
 }
