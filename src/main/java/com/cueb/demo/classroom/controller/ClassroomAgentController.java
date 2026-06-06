@@ -2,6 +2,7 @@ package com.cueb.demo.classroom.controller;
 
 import com.cueb.demo.classroom.SystemPrompt;
 import com.cueb.demo.classroom.context.ClassroomQueryContext;
+import com.cueb.demo.classroom.service.ClassroomService;
 import com.cueb.demo.classroom.service.GuestChatHistoryService;
 import com.cueb.demo.classroom.vo.ClassroomStatusVO;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,16 +30,19 @@ public class ClassroomAgentController {
     private final ChatClient chatClient;
     private final ChatClient chatClientV2;
     private final ClassroomQueryContext queryContext;
+    private final ClassroomService classroomService;
     private final GuestChatHistoryService historyService;
 
     public ClassroomAgentController(
             @Qualifier("chatClientV1") ChatClient chatClient,
             @Qualifier("chatClientV2") ChatClient chatClientV2,
             ClassroomQueryContext queryContext,
+            ClassroomService classroomService,
             GuestChatHistoryService historyService) {
         this.chatClient = chatClient;
         this.chatClientV2 = chatClientV2;
         this.queryContext = queryContext;
+        this.classroomService = classroomService;
         this.historyService = historyService;
     }
 
@@ -113,21 +117,26 @@ public class ClassroomAgentController {
             token = historyService.generateToken();
         }
 
+        // ---- 预查询教室数据 ----
+        List<ClassroomStatusVO> classrooms = classroomService.listAllStatus();
+        String dataBlock = buildClassroomDataBlock(classrooms);
+
         // ---- 构建消息 ----
+        // 数据块附在用户消息末尾，确保在历史之后、AI 最后看到
         List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(SystemPrompt.VALUE));
+        messages.add(new SystemMessage(SystemPrompt.V2_VALUE));
         if (useMemory) {
             messages.addAll(historyService.getHistory(token));
         }
-        messages.add(new UserMessage(message));
+        messages.add(new UserMessage(dataBlock + "\n\n用户问题：" + message));
 
-        // ---- 调用 AI（V2 工具链，自动写入 queryContext）----
+        // ---- 调用 AI（V2 工具链，只含 reportOccupancy）----
         String reply = chatClientV2.prompt()
                 .messages(messages)
                 .call()
                 .content();
 
-        // ---- 记录历史 ----
+        // ---- 记录历史（不记录注入的数据块，避免 Prompt 膨胀）----
         if (useMemory) {
             historyService.appendHistory(token, message, reply);
         }
@@ -138,12 +147,54 @@ public class ClassroomAgentController {
         body.put("reply", reply);
 
         if (includeVO) {
-            List<ClassroomStatusVO> classrooms = queryContext.getLastQueryResult();
-            body.put("classrooms", classrooms != null ? classrooms : List.of());
+            if (queryContext.getLastReportResult() != null) {
+                classrooms = classroomService.listAllStatus();
+            }
+            // 只返回 AI 回复中提到的教室，前端按此展示
+            classrooms = filterByMentioned(classrooms, reply);
+            body.put("classrooms", classrooms);
         }
 
         return ResponseEntity.ok()
                 .header("X-Guest-Token", token)
                 .body(body);
+    }
+
+    /** 将教室数据格式化为 AI 可直接使用的上下文文本 */
+    private String buildClassroomDataBlock(List<ClassroomStatusVO> classrooms) {
+        StringBuilder sb = new StringBuilder("【当前教室实时数据 —— 务必基于此数据回答，禁止编造】\n");
+        for (ClassroomStatusVO v : classrooms) {
+            sb.append(v.getName())
+              .append(" | ").append(v.getStatus())
+              .append(" | 容量").append(v.getCapacity());
+            if (v.getCourseName() != null) {
+                sb.append(" | ").append(v.getCourseName())
+                  .append(" | ").append(v.getTeacherName());
+            }
+            if (v.getPeopleCount() != null) {
+                sb.append(" | 人数").append(v.getPeopleCount());
+            }
+            if (v.getRemainingMinutes() != null && v.getRemainingMinutes() > 0) {
+                sb.append(" | 剩余").append(formatMinutes(v.getRemainingMinutes()));
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    /** 按 AI 回复文本过滤：只保留回复中出现了名称的教室 */
+    private List<ClassroomStatusVO> filterByMentioned(List<ClassroomStatusVO> all, String reply) {
+        if (reply == null || reply.isBlank()) return List.of();
+        return all.stream()
+                .filter(v -> reply.contains(v.getName()))
+                .toList();
+    }
+
+    private static String formatMinutes(long totalMinutes) {
+        if (totalMinutes <= 0) return "0分钟";
+        long hours = totalMinutes / 60;
+        long minutes = totalMinutes % 60;
+        if (hours > 0) return hours + "小时" + (minutes > 0 ? minutes + "分钟" : "");
+        return minutes + "分钟";
     }
 }

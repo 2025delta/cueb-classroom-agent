@@ -13,8 +13,9 @@ public class ClassroomStatusVO {
     private String teacherName;   // 当前教师，无课为null
     private Integer reportedBy;   // 最近上报者身份，1=学生 2=老师
     private Integer peopleCount;  // 教室内人数
-    private LocalTime duration;         // 占用持续时长
-    private LocalDateTime reportCreateTime; // 上报记录的创建时间
+    private LocalTime duration;              // 占用持续时长
+    private LocalDateTime reportCreateTime;   // 上报记录的创建时间
+    private Long remainingMinutes;            // 剩余占用分钟数（已过期则为0或负数）
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -38,4 +39,6 @@ public class ClassroomStatusVO {
     public void setDuration(LocalTime duration) { this.duration = duration; }
     public LocalDateTime getReportCreateTime() { return reportCreateTime; }
     public void setReportCreateTime(LocalDateTime reportCreateTime) { this.reportCreateTime = reportCreateTime; }
+    public Long getRemainingMinutes() { return remainingMinutes; }
+    public void setRemainingMinutes(Long remainingMinutes) { this.remainingMinutes = remainingMinutes; }
 }

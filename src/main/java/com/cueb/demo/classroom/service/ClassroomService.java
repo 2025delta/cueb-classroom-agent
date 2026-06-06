@@ -10,6 +10,7 @@ import com.cueb.demo.classroom.util.PeriodUtil;
 import com.cueb.demo.classroom.vo.ClassroomStatusVO;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -99,6 +100,10 @@ public class ClassroomService {
             vo.setPeopleCount(latest.getPeopleCount());
             vo.setDuration(latest.getDuration());
             vo.setReportCreateTime(latest.getCreateTime());
+            // 计算剩余时间（分钟）—— 正数为剩余，负数为已超时
+            long remaining = Duration.between(LocalDateTime.now(),
+                    latest.getCreateTime().plusSeconds(latest.getDuration().toSecondOfDay())).toMinutes();
+            vo.setRemainingMinutes(remaining);
             return vo;
         }
 
