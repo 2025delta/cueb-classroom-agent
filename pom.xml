@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.cueb</groupId>
     <artifactId>cueb-agent-demo</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.3-SNAPSHOT</version>
     <name>cueb-agent-demo</name>
     <description>cueb-agent-demo</description>
     <url/>

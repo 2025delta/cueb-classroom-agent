@@ -2,6 +2,8 @@ package com.cueb.demo.classroom.controller;
 
 import com.cueb.demo.classroom.SystemPrompt;
 import com.cueb.demo.classroom.context.ClassroomQueryContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.cueb.demo.classroom.service.ClassroomService;
 import com.cueb.demo.classroom.service.GuestChatHistoryService;
 import com.cueb.demo.classroom.vo.ClassroomStatusVO;
@@ -26,6 +28,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/agent")
 public class ClassroomAgentController {
+
+    private static final Logger log = LoggerFactory.getLogger(ClassroomAgentController.class);
 
     private final ChatClient chatClient;
     private final ChatClient chatClientV2;
@@ -162,6 +166,9 @@ public class ClassroomAgentController {
 
     /** 将教室数据格式化为 AI 可直接使用的上下文文本 */
     private String buildClassroomDataBlock(List<ClassroomStatusVO> classrooms) {
+        if (classrooms.isEmpty()) {
+            return "【当前教室实时数据】暂无教室数据，请如实告知用户系统内暂无教室信息，禁止编造。\n";
+        }
         StringBuilder sb = new StringBuilder("【当前教室实时数据 —— 务必基于此数据回答，禁止编造】\n");
         for (ClassroomStatusVO v : classrooms) {
             sb.append(v.getName())
@@ -182,12 +189,40 @@ public class ClassroomAgentController {
         return sb.toString();
     }
 
-    /** 按 AI 回复文本过滤：只保留回复中出现了名称的教室 */
+    /**
+     * 按 AI 回复文本过滤：只保留回复中出现的教室。
+     * 容错策略：① 去空格匹配（"博学楼 101"≈"博学楼101"）
+     *          ② 建筑物级回退（AI 只提"博学楼"未逐间列举 → 返回整个楼）
+     */
     private List<ClassroomStatusVO> filterByMentioned(List<ClassroomStatusVO> all, String reply) {
-        if (reply == null || reply.isBlank()) return List.of();
-        return all.stream()
-                .filter(v -> reply.contains(v.getName()))
+        log.info("filterByMentioned: replyLength={}, totalClassrooms={}", reply != null ? reply.length() : 0, all.size());
+        if (reply == null || reply.isBlank()) {
+            log.info("filterByMentioned: reply is empty, returning []");
+            return List.of();
+        }
+
+        String normalizedReply = reply.replace(" ", "").replace("*", "").replace("_", "");
+
+        List<ClassroomStatusVO> matched = all.stream()
+                .filter(v -> {
+                    String nameNoSpace = v.getName().replace(" ", "");
+                    return normalizedReply.contains(nameNoSpace);
+                })
                 .toList();
+
+        if (!matched.isEmpty()) {
+            log.info("filterByMentioned: matched {}/{} classrooms by name", matched.size(), all.size());
+            return matched;
+        }
+
+        // 回退：AI 没逐间点名，但可能提到了建筑物名称
+        List<ClassroomStatusVO> byBuilding = all.stream()
+                .filter(v -> v.getBuilding() != null && normalizedReply.contains(v.getBuilding()))
+                .toList();
+
+        log.info("filterByMentioned: name match empty, fallback to building match: {}/{} classrooms",
+                byBuilding.size(), all.size());
+        return byBuilding;
     }
 
     private static String formatMinutes(long totalMinutes) {
